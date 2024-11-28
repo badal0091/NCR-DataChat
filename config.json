@@ -1,0 +1,16 @@
+{
+  "demos": [
+    {
+      "title": "NCR Data",
+      "body": "Non-Conformance Report (NCR) data detailing inspection stages, equipment issues, root causes, corrective actions, and resolution statuses.",
+      "file": "NCR Data_V1.0 (1).csv",
+      "questions": [
+        "What is the total number of NCRs (Non-Conformance Reports) recorded in the dataset?",
+        "How many NCRs are currently open versus closed?",
+        "What are the most common problem categories identified in the NCRs?",
+        "What is the average time taken to close an NCR from the open date to the close date?",
+        "Which equipment has the highest number of NCRs associated with it?"
+      ]
+    }
+  ]
+}
