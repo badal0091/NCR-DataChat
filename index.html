@@ -10,11 +10,20 @@
     body {
       font-family: Arial, sans-serif;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
       height: 100vh;
       margin: 0;
       background-color: #f4f4f4;
+    }
+    .logo {
+      margin-bottom: 20px;
+    }
+    .logo img {
+      /* border-radius: 8px; */
+      height: 100px;
+      width: 300px;
     }
     .container {
       width: 300px;
@@ -44,6 +53,9 @@
   </style>
 </head>
 <body>
+  <div class="logo">
+    <img src="image.png" alt="Logo">
+  </div>
   <div class="container">
     <h2>Login</h2>
     <form id="loginForm">

@@ -3,7 +3,7 @@
     {
       "title": "NCR Data",
       "body": "Non-Conformance Report (NCR) data detailing inspection stages, equipment issues, root causes, corrective actions, and resolution statuses.",
-      "file": "NCR Data - without time.csv",
+      "file": "NCR Data.csv",
       "questions": [
         "What is the total number of NCRs (Non-Conformance Reports) recorded in the dataset?",
         "How many NCRs are currently open versus closed?",
