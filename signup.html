@@ -51,6 +51,9 @@
       <button type="submit" class="btn btn-primary w-100">Sign Up</button>
     </form>
     <div id="errorMessage" class="alert alert-danger mt-3 d-none" role="alert"></div>
+    <div class="login-link">
+        <p><a href="index.html">Login</a></p>
+      </div>
   </div>
 
   <script>
@@ -76,8 +79,8 @@
 
       // Fetch credentials.csv and check if username exists
       const response = await fetch('credentials.csv');
-      const csvText = await response.text();
-      const rows = csvText.split('\n').map(row => row.split(','));
+      const text = await response.text();
+      const rows = text.split('\n').map(row => row.split(','));
       const exists = rows.some(row => row[0] === username);
 
       if (exists) {
@@ -85,9 +88,18 @@
         errorMessage.textContent = 'Username already exists!';
         errorMessage.classList.remove('d-none');
       } else {
-        // Append new credentials to the file (simulated)
-        alert('Signup successful! Please log in.');
-        window.location.href = 'login.html';
+        // Append new user to credentials.csv
+        const newUser = `${username},${password}\n`;
+        const blob = new Blob([text + newUser], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'credentials.csv';
+        link.click();
+        URL.revokeObjectURL(url);
+
+        alert('Signup successful!');
+        window.location.href = 'index.html';
       }
     });
   </script>
