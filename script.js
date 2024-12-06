@@ -393,10 +393,10 @@ Wrap columns with spaces inside [].`,
           />
         </div>
         <div class="col-auto">
-          <button id="chart-button" type="button" class="btn btn-primary">
-            <i class="bi bi-bar-chart-line"></i>
-            Draw Chart
-          </button>
+          // <button id="chart-button" type="button" class="btn btn-primary">
+          //   <i class="bi bi-bar-chart-line"></i>
+          //   Draw Chart
+          // </button>
         </div>
       </div>
     `;
