@@ -382,22 +382,22 @@ Wrap columns with spaces inside [].`,
             Download CSV
           </button>
         </div>
-        <div class="col">
-          <input
-            type="text"
-            id="chart-input"
-            name="chart-input"
-            class="form-control"
-            placeholder="Describe what you want to chart"
-            value="Draw the most appropriate chart to visualize this data"
-          />
-        </div>
-        <div class="col-auto">
+        // <div class="col">
+        //   <input
+        //     type="text"
+        //     id="chart-input"
+        //     name="chart-input"
+        //     class="form-control"
+        //     placeholder="Describe what you want to chart"
+        //     value="Draw the most appropriate chart to visualize this data"
+        //   />
+        // </div>
+        // <div class="col-auto">
           // <button id="chart-button" type="button" class="btn btn-primary">
           //   <i class="bi bi-bar-chart-line"></i>
           //   Draw Chart
           // </button>
-        </div>
+        // </div>
       </div>
     `;
     const tableHtml = renderTable(data.slice(0, 100));
