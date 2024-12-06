@@ -1,268 +1,530 @@
-/* global d3 */
-import { render, html } from "lit-html";
-import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
-import { marked } from "marked";
-import { pc } from "@gramex/ui/format";
-import { network } from "@gramex/network";
-import { SSE } from "sse.js";
+/* globals bootstrap */
+import sqlite3InitModule from "https://esm.sh/@sqlite.org/sqlite-wasm@3.46.1-build3";
+import { render, html } from "https://cdn.jsdelivr.net/npm/lit-html@3/+esm";
+import { unsafeHTML } from "https://cdn.jsdelivr.net/npm/lit-html@3/directives/unsafe-html.js";
+import { dsvFormat, autoType } from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
+import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
+import { markedHighlight } from "https://cdn.jsdelivr.net/npm/marked-highlight@2/+esm";
+import hljs from "https://cdn.jsdelivr.net/npm/highlight.js@11/+esm";
+import { Chart, registerables } from "https://cdn.jsdelivr.net/npm/chart.js@4/+esm";
 
-const config = document.querySelector("#config").dataset;
-const $searchForm = document.querySelector("#search-form");
-const $summary = document.querySelector("#summary");
-const $matches = document.querySelector("#matches");
-const $network = document.querySelector("#network");
-const $similarity = document.querySelector("#similarity");
-let result;
-let graph;
-let isBrushed = false;
-const maxSelected = 10;
+// Initialize SQLite
+const defaultDB = "@";
+const sqlite3 = await sqlite3InitModule({ printErr: console.error });
 
-$searchForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+// Initialize ChartJS
+Chart.register(...registerables);
 
-  // Clear the summary and matches
-  render(spinner("Searching knowledge base..."), $matches);
-  render(html``, $summary);
-  $network.replaceChildren();
-  $similarity.classList.add("d-none");
+// Set up DOM elements
+const $demos = document.querySelector("#demos");
+const $upload = document.getElementById("upload");
+const $tablesContainer = document.getElementById("tables-container");
+const $sql = document.getElementById("sql");
+const $toast = document.getElementById("toast");
+const $result = document.getElementById("result");
+const $chartCode = document.getElementById("chart-code");
+const toast = new bootstrap.Toast($toast);
+const loading = html`<div class="spinner-border" role="status">
+  <span class="visually-hidden">Loading...</span>
+</div>`;
 
-  // Fetch similar documents
-  const form = new FormData(e.target);
-  result = { content: "" };
-  const similarityResult = await fetch("../similarity?" + new URLSearchParams(form).toString()).then((d) => d.json());
-  Object.assign(result, similarityResult);
+let latestQueryResult = [];
+let latestChart;
 
-  // Assign relevance to each document based on the score
-  result.matches.forEach((doc) => (doc.relevance = (1.5 - doc.score) / (1.5 - 0.8)));
-  // Sort by relevance
-  result.matches.sort((a, b) => b.relevance - a.relevance);
+// --------------------------------------------------------------------
+// Set up Markdown
+const marked = new Marked(
+  markedHighlight({
+    langPrefix: "hljs language-",
+    highlight(code, lang) {
+      const language = hljs.getLanguage(lang) ? lang : "plaintext";
+      return hljs.highlight(code, { language }).value;
+    },
+  })
+);
 
-  result.links = [];
-  result.similarity.forEach((values, i) =>
-    values.forEach((similarity, j) => {
-      if (i != j) result.links.push({ source: result.matches[i], target: result.matches[j], similarity });
-    }),
-  );
-
-  // Start by showing the top few links
-  const similarities = result.links.map((d) => d.similarity).sort((a, b) => b - a);
-  $similarity.value = similarities[Math.min(50, similarities.length - 1)];
-
-  drawNetwork();
-  brush(); // To select the top maxSelected nodes and redraw
-  summarize();
+marked.use({
+  renderer: {
+    table(header, body) {
+      return `<table class="table table-sm">${header}${body}</table>`;
+    },
+  },
 });
 
-// When the user brushes the network, redraw with only selected nodes.
-// If no nodes are selected, show the first (top) maxSelected nodes.
-function brush(nodes = []) {
-  isBrushed = !!nodes.length;
-  result.matches.forEach((match) => (match.selected = false));
-  if (!nodes.length) nodes = result.matches.slice(0, maxSelected);
-  nodes.forEach((node) => (node.selected = true));
-  redraw();
+// --------------------------------------------------------------------
+// Set up LLM tokens
+
+let token;
+
+try {
+  token = (await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json())).token;
+} catch {
+  token = null;
 }
 
-const colorConfig = JSON.parse(config.color) ?? {
-  field: "relevance",
-  scale: "interpolateRdYlGn",
-  domain: [0, 1],
-  relevanceOpacity: false,
-};
-const scale = colorConfig.scale
-  ? d3.scaleSequential(d3[colorConfig.scale]).domain(colorConfig.domain)
-  : colorConfig.values
-    ? d3.scaleOrdinal().domain(Object.keys(colorConfig.values)).range(Object.values(colorConfig.values))
-    : colorConfig
-      ? d3.scaleOrdinal().range(d3.schemeCategory10)
-      : "green";
-const color =
-  colorConfig.field == "relevance"
-    ? (d) => scale(d[colorConfig.field])
-    : colorConfig.field
-      ? (d) => scale(d.metadata[colorConfig.field])
-      : "green";
-const opacity = colorConfig.relevanceOpacity ? d3.scaleLinear().domain([0, 1]).range([0.1, 1]) : () => 1;
+render(
+  token
+    ? html`
+       
+      `
+    : html`<a class="btn btn-primary" href="https://llmfoundry.straive.com/">Sign in to upload files</a>`,
+  $upload
+);
 
-// Draw the network whenever the similarity changes
-function drawNetwork() {
-  $similarity.classList.remove("d-none");
-  const minSimilarity = parseFloat($similarity.value);
-  const linksFilter = result.links.filter((d) => d.similarity >= minSimilarity);
-  graph = network("#network", { nodes: result.matches, links: linksFilter, brush });
-  graph.nodes.attr("r", 6).attr("stroke", "rgba(var(--bs-body-color-rgb), 0.2)");
-  graph.nodes.attr("fill", color);
-  graph.nodes.attr("opacity", ({ relevance }) => opacity(relevance));
-  graph.links.attr("stroke", "rgba(var(--bs-body-color-rgb), 0.2)").attr("stroke-width", 2);
-}
+// --------------------------------------------------------------------
+// Render demos
 
-$similarity.addEventListener("input", drawNetwork);
-
-async function summarize(q) {
-  const form = new FormData($searchForm);
-  result.content = "";
-  result.done = false;
-  if (!q) q = form.get("q");
-  redraw();
-
-  const payload = JSON.stringify({
-    app: form.get("app"),
-    Tone: form.get("Tone"),
-    Format: form.get("Format"),
-    Language: form.get("Language"),
-    Followup: form.get("Followup"),
-    q,
-    context: result.matches
-      .filter((d) => d.selected)
-      .slice(0, maxSelected)
-      .map((d, i) => `DOC_ID: ${i + 1}\nTITLE: ${d.metadata.h1}\n${d.page_content}\n`)
-      .join("\n"),
-  });
-
-  const source = new SSE("../summarize", { payload, start: false });
-  source.addEventListener("message", (event) => {
-    if (event.data == "[DONE]") result.done = true;
-    else {
-      try {
-        result.content += JSON.parse(event.data).choices?.[0]?.delta?.content ?? "";
-      } catch (err) {
-        console.error("Non JSON message", event.data);
-        result.error = err.message;
-      }
-    }
-    redraw();
-  });
-  source.stream();
-}
-
-const spinner = (message) =>
-  html`<div class="my-5 d-flex justify-content-center align-items-center w-100">
-    <div class="spinner-grow text-primary" aria-hidden="true"></div>
-    <strong class="ms-2 display-6" role="status">${message}</strong>
-  </div>`;
-
-const alertMsg = (message, error, type = "danger") =>
-  html`<div class="alert alert-${type}" role="alert">
-    <p>${message}</p>
-    <pre style="white-space: pre-wrap">${error}</pre>
-  </div>`;
-
-const redraw = () => {
-  render(
-    result.error
-      ? alertMsg("Sorry, I cannot summarize. I got this error:", result.error.data)
-      : result.content.length
-        ? html`<div class="my-3">
-            <h2 class="h4">Summary</h2>
-            ${unsafeHTML(marked.parse(result.content))}
-            ${result.done ? "" : html`<div class="spinner-grow spinner-grow-sm text-primary" aria-hidden="true"></div>`}
+fetch("config.json")
+  .then((r) => r.json())
+  .then(({ demos }) =>
+    render(
+      demos.map(
+        ({ title, body, file, questions }) =>
+          html` <div class="col py-3">
+            <a class="demo card h-100 text-decoration-none" href="${file}" data-questions=${JSON.stringify(questions ?? [])}>
+              <div class="card-body">
+                <h5 class="card-title">${title}</h5>
+                <p class="card-text">${body}</p>
+              </div>
+            </a>
           </div>`
-        : spinner("Summarizing results..."),
-    $summary,
+      ),
+      $demos
+    )
   );
-  render(
-    result.matches && result.matches.length
-      ? searchList(result)
-      : html`<div class="alert alert-danger" role="alert">No matches found. Try another search.</div>`,
-    $matches,
-  );
-  // All snippet links should open in a new tab
-  $matches.querySelectorAll(".search-snippet a").forEach((a) => a.setAttribute("target", "_blank"));
-};
 
-const searchList = ({ matches }) => {
-  const selected = matches.filter((d) => d.selected);
-  const grouped = d3.group(selected, (d) => d.metadata.key);
-  const searchList = [];
-  if (matches[0].relevance < config.minSimilarity) {
-    searchList.push(
-      html`<div class="alert alert-danger alert-dismissible fade show" role="alert">
-        No good results. Showing some diverse areas to explore.
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-      </div>`,
-    );
-  }
-  const selectedLength = matches.filter((d) => d.selected).length;
-  searchList.push(html`
-    <div class="my-3 d-flex">
-      <button type="button" class="btn btn-success btn-sm me-auto summarize-snippets" ?disabled=${!isBrushed}>
-        <i class="bi bi-magic"></i> Summarize
-      </button>
-      ${selectedLength >= maxSelected
-        ? null
-        : html`<button class="btn btn-outline-primary btn-sm me-2 show-all">
-            <i class="bi bi-x-circle-fill"></i> Show all
-          </button>`}
-      <div class="btn-group" role="group" aria-label="Basic example">
-        <button class="btn btn-primary btn-sm expand-snippets"><i class="bi bi-arrows-expand"></i> Expand</button>
-        <button class="btn btn-primary btn-sm collapse-snippets"><i class="bi bi-arrows-collapse"></i> Collapse</button>
-      </div>
-    </div>
-  `);
-  grouped.forEach((docs, key) => {
-    searchList.push(html`
-      <div class="my-3 search-item">
-        <a class="fs-5 text-decoration-none" href="${config.link.replace("🔑", key)}" target="_blank" rel="noopener">
-          <i class="bi bi-circle-fill small" style="color:${color(docs[0])};opacity:${opacity(docs[0].relevance)}"></i>
-          ${docs[0].metadata.h1}</a
-        >
-        <small>(${pc(Math.min(1, docs[0].relevance))})</small>
-        <div class="bg-secondary">
-          <div class="bg-danger" style="width: ${pc(Math.min(1, docs[0].relevance))}; height:2px"></div>
-        </div>
-
-        <div class="search-snippet cursor-pointer py-2 ${config.openSnippets ? "" : "closed"}">
-          <ul class="list-group">
-            ${docs.map((doc) => html`<li class="list-group-item">${unsafeHTML(marked.parse(doc.page_content))}</li>`)}
-          </ul>
-        </div>
-      </div>
-    `);
-  });
-  return searchList;
-};
-
-$matches.addEventListener("click", (e) => {
-  // Clicking on a snippet toggles it open/closed, unless it's a link (which'll open in a new tab)
-  const $snippet = e.target.closest(".search-snippet");
-  if ($snippet && !e.target.closest("a")) $snippet.classList.toggle("closed");
-  const $expandSnippets = e.target.closest(".expand-snippets");
-  if ($expandSnippets) $matches.querySelectorAll(".search-snippet").forEach((d) => d.classList.remove("closed"));
-  const $collapseSnippets = e.target.closest(".collapse-snippets");
-  if ($collapseSnippets) $matches.querySelectorAll(".search-snippet").forEach((d) => d.classList.add("closed"));
-  const $summarizeSnippets = e.target.closest(".summarize-snippets");
-  if ($summarizeSnippets) summarize("What's common in these documents?");
-  const $showAll = e.target.closest(".show-all");
-  if ($showAll) {
-    brush();
-    $matches.querySelectorAll(".search-snippet").forEach((d) => d.classList.add("closed"));
+$demos.addEventListener("click", async (e) => {
+  const $demo = e.target.closest(".demo");
+  if ($demo) {
+    e.preventDefault();
+    const file = $demo.getAttribute("href");
+    render(html`<div class="text-center my-3">${loading}</div>`, $tablesContainer);
+    await DB.upload(new File([await fetch(file).then((r) => r.blob())], file.split("/").pop()));
+    const questions = JSON.parse($demo.dataset.questions);
+    if (questions.length) {
+      DB.questionInfo.schema = JSON.stringify(DB.schema());
+      DB.questionInfo.questions = questions;
+    }
+    drawTables();
   }
 });
 
-document.querySelector("#sample-questions").addEventListener("click", (e) => {
+// --------------------------------------------------------------------
+// Manage database tables
+const db = new sqlite3.oo1.DB(defaultDB, "c");
+const DB = {
+  schema: function () {
+    let tables = [];
+    db.exec("SELECT name, sql FROM sqlite_master WHERE type='table'", { rowMode: "object" }).forEach((table) => {
+      table.columns = db.exec(`PRAGMA table_info(${table.name})`, { rowMode: "object" });
+      tables.push(table);
+    });
+    return tables;
+  },
+
+  // Recommended questions for the current schema
+  questionInfo: {},
+  questions: async function () {
+    if (DB.questionInfo.schema !== JSON.stringify(DB.schema())) {
+      const response = await llm({
+        system: "Suggest 5 diverse, useful questions that a user can answer from this dataset using SQLite",
+        user: DB.schema()
+          .map(({ sql }) => sql)
+          .join("\n\n"),
+        schema: {
+          type: "object",
+          properties: { questions: { type: "array", items: { type: "string" }, additionalProperties: false } },
+          required: ["questions"],
+          additionalProperties: false,
+        },
+      });
+      if (response.error) DB.questionInfo.error = response.error;
+      else DB.questionInfo.questions = response.questions;
+      DB.questionInfo.schema = JSON.stringify(DB.schema());
+    }
+    return DB.questionInfo;
+  },
+
+  upload: async function (file) {
+    if (file.name.match(/\.(sqlite3|sqlite|db|s3db|sl3)$/i)) await DB.uploadSQLite(file);
+    else if (file.name.match(/\.csv$/i)) await DB.uploadDSV(file, ",");
+    else if (file.name.match(/\.tsv$/i)) await DB.uploadDSV(file, "\t");
+    else notify("danger", `Unknown file type: ${file.name}`);
+  },
+
+  uploadSQLite: async function (file) {
+    const fileReader = new FileReader();
+    await new Promise((resolve) => {
+      fileReader.onload = async (e) => {
+        await sqlite3.capi.sqlite3_js_posix_create_file(file.name, e.target.result);
+        // Copy tables from the uploaded database to the default database
+        const uploadDB = new sqlite3.oo1.DB(file.name, "r");
+        const tables = uploadDB.exec("SELECT name, sql FROM sqlite_master WHERE type='table'", { rowMode: "object" });
+        for (const { name, sql } of tables) {
+          db.exec(sql);
+          const data = uploadDB.exec(`SELECT * FROM "${name}"`, { rowMode: "object" });
+          if (data.length > 0) {
+            const columns = Object.keys(data[0]);
+            const sql = `INSERT INTO "${name}" (${columns.map((c) => `"${c}"`).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`;
+            const stmt = db.prepare(sql);
+            db.exec("BEGIN TRANSACTION");
+            for (const row of data) stmt.bind(columns.map((c) => row[c])).stepReset();
+            db.exec("COMMIT");
+            stmt.finalize();
+          }
+        }
+        uploadDB.close();
+        resolve();
+      };
+      fileReader.readAsArrayBuffer(file);
+    });
+    notify("success", "Imported", `Imported SQLite DB: ${file.name}`);
+  },
+
+  uploadDSV: async function (file, separator) {
+    const fileReader = new FileReader();
+    const result = await new Promise((resolve) => {
+      fileReader.onload = (e) => {
+        const rows = dsvFormat(separator).parse(e.target.result, autoType);
+        resolve(rows);
+      };
+      fileReader.readAsText(file);
+    });
+    const tableName = file.name.slice(0, -4).replace(/[^a-zA-Z0-9_]/g, "_");
+    await DB.insertRows(tableName, result);
+  },
+
+  insertRows: async function (tableName, result) {
+    // Create table by auto-detecting column types
+    const cols = Object.keys(result[0]);
+    const typeMap = Object.fromEntries(
+      cols.map((col) => {
+        const sampleValue = result[0][col];
+        let sqlType = "TEXT";
+        if (typeof sampleValue === "number") sqlType = Number.isInteger(sampleValue) ? "INTEGER" : "REAL";
+        else if (typeof sampleValue === "boolean") sqlType = "INTEGER"; // SQLite has no boolean
+        else if (sampleValue instanceof Date) sqlType = "TEXT"; // Store dates as TEXT
+        return [col, sqlType];
+      })
+    );
+    const createTableSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (${cols.map((col) => `[${col}] ${typeMap[col]}`).join(", ")})`;
+    db.exec(createTableSQL);
+
+    // Insert data
+    const insertSQL = `INSERT INTO ${tableName} (${cols.map((col) => `[${col}]`).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`;
+    const stmt = db.prepare(insertSQL);
+    db.exec("BEGIN TRANSACTION");
+    for (const row of result) {
+      stmt
+        .bind(
+          cols.map((col) => {
+            const value = row[col];
+            return value instanceof Date ? value.toISOString() : value;
+          })
+        )
+        .stepReset();
+    }
+    db.exec("COMMIT");
+    stmt.finalize();
+    notify("success", "Imported", `Imported table: ${tableName}`);
+  },
+};
+
+$upload.addEventListener("change", async (e) => {
+  const uploadPromises = Array.from(e.target.files).map((file) => DB.upload(file));
+  await Promise.all(uploadPromises);
+  drawTables();
+});
+
+// --------------------------------------------------------------------
+// Render tables
+
+async function drawTables() {
+  const schema = DB.schema();
+
+  const tables = html`
+    <div class="accordion narrative mx-auto" id="table-accordion" style="--bs-accordion-btn-padding-y: 0.5rem">
+      ${schema.map(
+        ({ name, sql, columns }) => html`
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button
+                class="accordion-button collapsed"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#collapse-${name}"
+                aria-expanded="false"
+                aria-controls="collapse-${name}"
+              >${name}</button>
+            </h2>
+            <div
+              id="collapse-${name}"
+              class="accordion-collapse collapse"
+              data-bs-parent="#table-accordion"
+            >
+              <div class="accordion-body">
+                <pre style="white-space: pre-wrap">${sql}</pre>
+                <table class="table table-striped table-sm">
+                  <thead>
+                    <tr>
+                      <th>Column Name</th>
+                      <th>Type</th>
+                      <th>Not Null</th>
+                      <th>Default Value</th>
+                      <th>Primary Key</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${columns.map(
+                      (column) => html`
+                        <tr>
+                          <td>${column.name}</td>
+                          <td>${column.type}</td>
+                          <td>${column.notnull ? "Yes" : "No"}</td>
+                          <td>${column.dflt_value ?? "NULL"}</td>
+                          <td>${column.pk ? "Yes" : "No"}</td>
+                        </tr>
+                      `
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      `
+      )}
+    </div>
+  `;
+
+  const query = html`
+    <form class="mt-4 narrative mx-auto">
+      <div class="mb-3">
+        <label for="query" class="form-label fw-bold">Ask a question about your data:</label>
+        <textarea class="form-control" name="query" id="query" rows="3"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+  `;
+
+  render([tables, ...(schema.length ? [html`<div class="text-center my-3">${loading}</div>`, query] : [])], $tablesContainer);
+  if (!schema.length) return;
+
+  const $query = $tablesContainer.querySelector("#query");
+  $query.scrollIntoView({ behavior: "smooth", block: "center" });
+  $query.focus();
+  DB.questions().then(({ questions, error }) => {
+    if (error) return notify("danger", "Error", JSON.stringify(error));
+    render(
+      [
+        tables,
+        html`<div class="mx-auto narrative my-3">
+          <h2 class="h6">Sample questions</h2>
+          <ul>
+            ${questions.map((q) => html`<li><a href="#" class="question">${q}</a></li>`)}
+          </ul>
+        </div>`,
+        query,
+      ],
+      $tablesContainer
+    );
+    $query.focus();
+  });
+}
+
+// --------------------------------------------------------------------
+// Handle chat
+
+$tablesContainer.addEventListener("click", async (e) => {
   const $question = e.target.closest(".question");
   if ($question) {
-    $searchForm.querySelector("input[name=q]").value = $question.textContent;
-    $searchForm.dispatchEvent(new Event("submit", { bubbles: true }));
+    e.preventDefault();
+    $tablesContainer.querySelector("#query").value = $question.textContent;
+    $tablesContainer.querySelector('form button[type="submit"]').click();
   }
 });
 
-$summary.addEventListener("click", (e) => {
-  const $link = e.target.closest("a");
-  if ($link) e.preventDefault();
-  // If the user clicks on a followup question, search for it
-  if ($link.href.match(/#suggestion/)) {
-    $searchForm.querySelector("input[name=q]").value = $link.textContent;
-    $searchForm.dispatchEvent(new Event("submit", { bubbles: true }));
-    $searchForm.scrollIntoView({ behavior: "smooth" });
-  } else if ($link.href.match(/#\d+/)) {
-    const index = $link.href.split("#")[1] - 1;
-    // Highlight the citation and draw it
-    result.matches.forEach((match, i) => (match.selected = i == index));
-    redraw();
-    // Expact the citation
-    $matches.querySelectorAll(".search-snippet").forEach((d) => d.classList.remove("closed"));
-    // Scroll to the citation
-    $matches.scrollIntoView({ behavior: "smooth" });
+$tablesContainer.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  const query = formData.get("query");
+  render(html`<div class="text-center my-3">${loading}</div>`, $sql);
+  render(html``, $result);
+  const result = await llm({
+    system: `You'll answer the user's question based on this SQLite schema:
+
+${DB.schema()
+  .map(({ sql }) => sql)
+  .join("\n\n")}
+
+1. Guess my objective in asking this.
+2. Describe the steps to achieve this objective in SQL.
+3. Write SQL to answer the question. Use SQLite sytax.
+
+Replace generic filter values (e.g. "a location", "specific region", etc.) by querying a random value from data.
+Wrap columns with spaces inside [].`,
+    user: query,
+  });
+  render(html`${unsafeHTML(marked.parse(result))}`, $sql);
+
+  // Extract everything inside {lang?}...```
+  const sql = result.match(/```.*?\n(.*?)```/s)?.[1] ?? result;
+  const data = db.exec(sql, { rowMode: "object" });
+
+  // Render the data using the utility function
+  if (data.length > 0) {
+    latestQueryResult = data;
+    const actions = html`
+      <div class="row align-items-center g-2">
+        <div class="col-auto">
+          <button id="download-button" type="button" class="btn btn-primary">
+            <i class="bi bi-filetype-csv"></i>
+            Download CSV
+          </button>
+        </div>
+        <div class="col">
+          <input
+            type="text"
+            id="chart-input"
+            name="chart-input"
+            class="form-control"
+            placeholder="Describe what you want to chart"
+            value="Draw the most appropriate chart to visualize this data"
+          />
+        </div>
+        <div class="col-auto">
+          <button id="chart-button" type="button" class="btn btn-primary">
+            <i class="bi bi-bar-chart-line"></i>
+            Draw Chart
+          </button>
+        </div>
+      </div>
+    `;
+    const tableHtml = renderTable(data.slice(0, 100));
+    render([actions, tableHtml], $result);
+  } else {
+    render(html`<p>No results found.</p>`, $result);
   }
 });
+
+// --------------------------------------------------------------------
+// Utilities
+
+function notify(cls, title, message) {
+  $toast.querySelector(".toast-title").textContent = title;
+  $toast.querySelector(".toast-body").textContent = message;
+  const $toastHeader = $toast.querySelector(".toast-header");
+  $toastHeader.classList.remove("text-bg-success", "text-bg-danger", "text-bg-warning", "text-bg-info");
+  $toastHeader.classList.add(`text-bg-${cls}`);
+  toast.show();
+}
+
+async function llm({ system, user, schema }) {
+  const response = await fetch("https://llmfoundry.straive.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}:datachat` },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0,
+      ...(schema ? { response_format: { type: "json_schema", json_schema: { name: "response", strict: true, schema } } } : {}),
+    }),
+  }).then((r) => r.json());
+  if (response.error) return response;
+  const content = response.choices?.[0]?.message?.content;
+  try {
+    return schema ? JSON.parse(content) : content;
+  } catch (e) {
+    return { error: e };
+  }
+}
+
+// Utility function to render a table
+function renderTable(data) {
+  const columns = Object.keys(data[0]);
+  return html`
+    <table class="table table-striped table-hover">
+      <thead>
+        <tr>
+          ${columns.map((col) => html`<th>${col}</th>`)}
+        </tr>
+      </thead>
+      <tbody>
+        ${data.map(
+          (row) => html`
+            <tr>
+              ${columns.map((col) => html`<td>${row[col]}</td>`)}
+            </tr>
+          `
+        )}
+      </tbody>
+    </table>
+  `;
+}
+
+$result.addEventListener("click", async (e) => {
+  const $downloadButton = e.target.closest("#download-button");
+  if ($downloadButton && latestQueryResult.length > 0) {
+    download(dsvFormat(",").format(latestQueryResult), "datachat.csv", "text/csv");
+  }
+  const $chartButton = e.target.closest("#chart-button");
+  if ($chartButton && latestQueryResult.length > 0) {
+    const system = `Write JS code to draw a ChartJS chart.
+Write the code inside a \`\`\`js code fence.
+\`Chart\` is already imported.
+Data is ALREADY available as \`data\`, an array of objects. Do not create it. Just use it.
+Render inside a <canvas id="chart"> like this:
+
+\`\`\`js
+return new Chart(
+  document.getElementById("chart"),
+  {
+    type: "...",
+    options: { ... },
+    data: { ... },
+  }
+)
+\`\`\`
+`;
+    const user = `
+Question: ${$tablesContainer.querySelector('[name="query"]').value}
+
+// First 3 rows of result
+data = ${JSON.stringify(latestQueryResult.slice(0, 3))}
+
+IMPORTANT: ${$result.querySelector("#chart-input").value}
+`;
+    render(loading, $chartCode);
+    const result = await llm({ system, user });
+    render(html`${unsafeHTML(marked.parse(result))}`, $chartCode);
+    const code = result.match(/```js\n(.*?)\n```/s)?.[1];
+    if (!code) {
+      notify("danger", "Error", "Could not generate chart code");
+      return;
+    }
+
+    try {
+      const drawChart = new Function("Chart", "data", code);
+      if (latestChart) latestChart.destroy();
+      latestChart = drawChart(Chart, latestQueryResult);
+    } catch (error) {
+      notify("danger", "Error", `Failed to draw chart: ${error.message}`);
+      console.error(error);
+    }
+  }
+});
+
+// --------------------------------------------------------------------
+// Function to download CSV file
+function download(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
