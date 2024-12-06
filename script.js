@@ -54,22 +54,22 @@ marked.use({
 // --------------------------------------------------------------------
 // Set up LLM tokens
 
-let token;
+let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImJhZGFsLnZhcnNobmV5QHN0cmFpdmUuY29tIn0.ysCmDtq_uD4OUQghTCobhldQFim9ufNG4vSGgb21UXI";
 
-try {
-  token = (await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json())).token;
-} catch {
-  token = null;
-}
+// try {
+//   token = (await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json())).token;
+// } catch {
+//   token = null;
+// }
 
-render(
-  token
-    ? html`
+// render(
+//   token
+//     ? html`
        
-      `
-    : html`<a class="btn btn-primary" href="https://llmfoundry.straive.com/">Sign in to upload files</a>`,
-  $upload
-);
+//       `
+//     : html`<a class="btn btn-primary" href="https://llmfoundry.straive.com/">Sign in to upload files</a>`,
+//   $upload
+// );
 
 // --------------------------------------------------------------------
 // Render demos
@@ -243,58 +243,7 @@ async function drawTables() {
   const schema = DB.schema();
 
   const tables = html`
-    <div class="accordion narrative mx-auto" id="table-accordion" style="--bs-accordion-btn-padding-y: 0.5rem">
-      ${schema.map(
-        ({ name, sql, columns }) => html`
-          <div class="accordion-item">
-            <h2 class="accordion-header">
-              <button
-                class="accordion-button collapsed"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#collapse-${name}"
-                aria-expanded="false"
-                aria-controls="collapse-${name}"
-              >${name}</button>
-            </h2>
-            <div
-              id="collapse-${name}"
-              class="accordion-collapse collapse"
-              data-bs-parent="#table-accordion"
-            >
-              <div class="accordion-body">
-                <pre style="white-space: pre-wrap">${sql}</pre>
-                <table class="table table-striped table-sm">
-                  <thead>
-                    <tr>
-                      <th>Column Name</th>
-                      <th>Type</th>
-                      <th>Not Null</th>
-                      <th>Default Value</th>
-                      <th>Primary Key</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${columns.map(
-                      (column) => html`
-                        <tr>
-                          <td>${column.name}</td>
-                          <td>${column.type}</td>
-                          <td>${column.notnull ? "Yes" : "No"}</td>
-                          <td>${column.dflt_value ?? "NULL"}</td>
-                          <td>${column.pk ? "Yes" : "No"}</td>
-                        </tr>
-                      `
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      `
-      )}
-    </div>
+    
   `;
 
   const query = html`
@@ -375,14 +324,7 @@ Wrap columns with spaces inside [].`,
   if (data.length > 0) {
     latestQueryResult = data;
     const actions = html`
-      <div class="row align-items-center g-2">
-        <div class="col-auto">
-          <button id="download-button" type="button" class="btn btn-primary">
-            <i class="bi bi-filetype-csv"></i>
-            Download CSV
-          </button>
-          </div>
-      </div>
+      
     `;
     const tableHtml = renderTable(data.slice(0, 100));
     render([actions, tableHtml], $result);
