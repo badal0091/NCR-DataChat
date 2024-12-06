@@ -6,14 +6,14 @@ import { dsvFormat, autoType } from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm"
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
 import { markedHighlight } from "https://cdn.jsdelivr.net/npm/marked-highlight@2/+esm";
 import hljs from "https://cdn.jsdelivr.net/npm/highlight.js@11/+esm";
-import { Chart, registerables } from "https://cdn.jsdelivr.net/npm/chart.js@4/+esm";
+// import { Chart, registerables } from "https://cdn.jsdelivr.net/npm/chart.js@4/+esm";
 
 // Initialize SQLite
 const defaultDB = "@";
 const sqlite3 = await sqlite3InitModule({ printErr: console.error });
 
 // Initialize ChartJS
-Chart.register(...registerables);
+// Chart.register(...registerables);
 
 // Set up DOM elements
 const $demos = document.querySelector("#demos");
@@ -22,14 +22,14 @@ const $tablesContainer = document.getElementById("tables-container");
 const $sql = document.getElementById("sql");
 const $toast = document.getElementById("toast");
 const $result = document.getElementById("result");
-const $chartCode = document.getElementById("chart-code");
+// const $chartCode = document.getElementById("chart-code");
 const toast = new bootstrap.Toast($toast);
 const loading = html`<div class="spinner-border" role="status">
   <span class="visually-hidden">Loading...</span>
 </div>`;
 
 let latestQueryResult = [];
-let latestChart;
+// let latestChart;
 
 // --------------------------------------------------------------------
 // Set up Markdown
