@@ -382,7 +382,15 @@ function renderTable(data) {
         ${data.map(
           (row) => html`
             <tr>
-              ${columns.map((col) => html`<td>${row[col]}</td>`)}
+              ${columns.map((col) =>
+                html`<td>
+                  ${
+                    typeof row[col] === "number"
+                      ? row[col].toFixed(1) // Format numbers to one decimal place
+                      : row[col]
+                  }
+                </td>`
+              )}
             </tr>
           `
         )}
@@ -390,6 +398,7 @@ function renderTable(data) {
     </table>
   `;
 }
+
 
 $result.addEventListener("click", async (e) => {
   const $downloadButton = e.target.closest("#download-button");
