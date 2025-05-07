@@ -54,22 +54,22 @@ marked.use({
 // --------------------------------------------------------------------
 // Set up LLM tokens
 
-let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImJhZGFsLnZhcnNobmV5QHN0cmFpdmUuY29tIn0.ysCmDtq_uD4OUQghTCobhldQFim9ufNG4vSGgb21UXI";
+let token;
 
-// try {
-//   token = (await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json())).token;
-// } catch {
-//   token = null;
-// }
+try {
+  token = (await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json())).token;
+} catch {
+  token = null;
+}
 
-// render(
-//   token
-//     ? html`
+render(
+  token
+    ? html`
        
-//       `
-//     : html`<a class="btn btn-primary" href="https://llmfoundry.straive.com/">Sign in to upload files</a>`,
-//   $upload
-// );
+      `
+    : html`<a class="btn btn-primary" href="https://llmfoundry.straive.com/">Sign in to upload files</a>`,
+  $upload
+);
 
 // --------------------------------------------------------------------
 // Render demos
